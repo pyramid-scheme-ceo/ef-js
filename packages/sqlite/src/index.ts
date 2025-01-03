@@ -1,4 +1,4 @@
-import { DbInstance, FieldType } from "@ef-js/core";
+import { DbInstance, FieldTypes } from "@ef-js/core";
 import { Database } from 'sqlite3';
 
 export function sqlite(connectionString: string): DbInstance {
@@ -34,7 +34,7 @@ export function sqlite(connectionString: string): DbInstance {
     },
     ddlGenerators: {
       createTable: (params) => {
-        const columnTypeMap: Record<FieldType, string> = {
+        const columnTypeMap: Record<FieldTypes, string> = {
           'bigint': 'INTEGER',
           'dateTime': 'DATETIME',
           'int': 'INTEGER',
@@ -44,7 +44,7 @@ export function sqlite(connectionString: string): DbInstance {
         const fields = Object.keys(params.columns) as Array<keyof typeof params.columns>;
         const columnStatements = fields.map(f => {
           const columnParams = params.columns[f];
-          const columnDeclaration = [columnParams.columnName ?? f, columnTypeMap[columnParams.__type!]];
+          const columnDeclaration = [columnParams.columnName ?? f, columnTypeMap[columnParams.__type]];
 
           if (columnParams.primaryKey) {
             columnDeclaration.push('PRIMARY KEY');

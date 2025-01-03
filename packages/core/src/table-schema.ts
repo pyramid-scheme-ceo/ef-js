@@ -1,18 +1,8 @@
 /**
- * Utility type to convert a union to an intersection.
- */
-type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends ((k: infer I) => void) ? I : never;
-
-/**
- * The possible types that any given field may be.
- */
-export type FieldType = keyof SchemaFields;
-
-/**
  * Schema definition options which belong to all field types.
  */
 export type CommonSchemaFields = {
-    __type: FieldType,
+    __type: FieldTypes,
     unique: boolean,
     required: boolean,
     columnName?: string,
@@ -33,49 +23,42 @@ type IntegerPrimaryKeyFields = {
 };
 
 /**
- * Map of each field type to it's native JS type and potential schema definition options.
+ * Type to infer the configuration options available for the field based on it's
+ * underlying JS type.
  */
-type SchemaFields = {
-    bigint: {
-        jsType: number,
-        configuration: CommonSchemaFields & PrimaryKeyFields & IntegerPrimaryKeyFields,
-    },
-    dateTime: {
-        jsType: Date,
-        configuration: CommonSchemaFields,
-    },
-    int: {
-        jsType: number,
-        configuration: CommonSchemaFields & PrimaryKeyFields & IntegerPrimaryKeyFields,
-    },
-    string: {
-        jsType: string,
-        configuration: CommonSchemaFields & PrimaryKeyFields,
-    },
-};
+type InferConfig<TUnderlying> = TUnderlying extends bigint ?
+    { configuration: CommonSchemaFields & PrimaryKeyFields & IntegerPrimaryKeyFields } :
+    TUnderlying extends number ?
+        { configuration: CommonSchemaFields & PrimaryKeyFields & IntegerPrimaryKeyFields } :
+        TUnderlying extends Date ?
+            { configuration: CommonSchemaFields } :
+            TUnderlying extends string ?
+                { configuration: CommonSchemaFields & PrimaryKeyFields }
+                : never;
 
 /**
- * All possible options for a field configuration. Some fields may not support all options.
+ * Type representing all possible fields that a column's configuration *may* have on it.
  */
-export type AllPossibleSchemaConfigurations = Partial<UnionToIntersection<SchemaFields[keyof SchemaFields]['configuration']>>;
+export type AllPossibleSchemaConfigurations = CommonSchemaFields & Partial<PrimaryKeyFields & IntegerPrimaryKeyFields>;
 
 /**
  * Generic SchemaBuilder type. Requires a method for each configuration option which will in turn, enable that option in the schema.
  */
-export type SchemaBuilder<TFieldType extends keyof SchemaFields> = {
-    __build: () => SchemaFields[TFieldType]['configuration'],
-} & { [P in keyof SchemaFields[TFieldType]['configuration']]: () => SchemaBuilder<TFieldType> };
+export type SchemaBuilder<TUnderlying> = {
+    __type: string,
+    __build: () => InferConfig<TUnderlying>,
+} & { [P in keyof InferConfig<TUnderlying>['configuration']]: () => SchemaBuilder<TUnderlying> };
 
 /**
  * Generic schema builder.
  * @param options The current schema options.
  * @returns Schema builder with latest options.
  */
-function schemaBuilder<TFieldType extends keyof SchemaFields>(options: SchemaFields[TFieldType]['configuration']): SchemaBuilder<TFieldType> {
+function schemaBuilder<TUnderlying>(options: InferConfig<TUnderlying>['configuration']): SchemaBuilder<TUnderlying> {
     const updaters = (Object.keys(options) as Array<keyof typeof options>).reduce((acc, curr) => ({
         ...acc,
-        [curr]: () => schemaBuilder<TFieldType>({ ...options, [curr]: true }),
-    }), {} as Record<keyof typeof options, () => SchemaBuilder<TFieldType>>);
+        [curr]: () => schemaBuilder<TUnderlying>({ ...options, [curr]: true }),
+    }), {} as Record<keyof typeof options, () => SchemaBuilder<TUnderlying>>);
 
     return {
         __build: () => options,
@@ -84,41 +67,37 @@ function schemaBuilder<TFieldType extends keyof SchemaFields>(options: SchemaFie
 }
 
 /**
- * BigInt schema builder.
+ * Each possible data type and the default parameters for each.
  */
-export function bigIntSchemaBuilder(): SchemaBuilder<'bigint'> {
-    return schemaBuilder<'bigint'>({
+export const dataTypes = {
+    bigint: () => schemaBuilder<bigint>({
         __type: 'bigint',
         unique: false,
         required: false,
         primaryKey: false,
         autoIncrement: false,
-    });
-}
-
-export function dateTimeSchemaBuilder(): SchemaBuilder<'dateTime'> {
-    return schemaBuilder<'dateTime'>({
+    }),
+    dateTime: () => schemaBuilder<Date>({
         __type: 'dateTime',
         unique: false,
         required: false,
-    });
-}
-
-export function intSchemaBuilder(): SchemaBuilder<'int'> {
-    return schemaBuilder<'int'>({
+    }),
+    int: () => schemaBuilder<number>({
         __type: 'int',
         unique: false,
         required: false,
         primaryKey: false,
         autoIncrement: false,
-    });
-}
-
-export function stringSchemaBuilder(): SchemaBuilder<'string'> {
-    return schemaBuilder<'string'>({
+    }),
+    string: () => schemaBuilder<string>({
         __type: 'string',
         unique: false,
         required: false,
         primaryKey: false,
-    });
+    }),
 }
+
+/**
+ * Collection of all possible field types supported by ef-js.
+ */
+export type FieldTypes = keyof typeof dataTypes;

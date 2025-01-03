@@ -1,4 +1,4 @@
-import { AllPossibleSchemaConfigurations } from "./table-schema";
+import { AllPossibleSchemaConfigurations, dataTypes, SchemaBuilder } from "./table-schema";
 
 type ParamsArray = (string | number | Date | boolean)[];
 
@@ -49,3 +49,99 @@ export type DbInstance = {
         [TGenerator in keyof DqlGenerators]: (params: DqlGenerators[TGenerator]['parameters']) => DqlGenerators[TGenerator]['returnType']
     },
 };
+
+type DefineDatabaseConfig<TEntities> = {
+    entities: {
+        [EntityName in keyof TEntities]: {
+            options?: {
+                tableName?: string,
+            },
+            columnSpec: {
+                [Column in keyof TEntities[EntityName]]: SchemaBuilder<TEntities[EntityName][Column]>
+            }
+        }
+    },
+};
+
+type GetEntityFields<TEntity> = {
+    [P in keyof TEntity]: TEntity[P];
+}
+
+type SliceQuerySegment = {
+    start: number | undefined,
+    end: number | undefined,
+};
+
+type FilterQuerySegment<TEntity> = {
+    expression: (entity: TEntity) => boolean,
+};
+
+type QuerySegment<TEntity> = {
+    type: 'filter' | 'slice',
+    properties: FilterQuerySegment<TEntity> | SliceQuerySegment,
+};
+
+type QueryBuilder<TEntity> = {
+    querySegments: QuerySegment<TEntity>[],
+    execute: (dbInstance: DbInstance) => Promise<TEntity[]>,
+    filter: (expression: (entity: GetEntityFields<TEntity>) => boolean) => QueryBuilder<TEntity>,
+    find: (expression: (entity: GetEntityFields<TEntity>) => boolean) => Promise<TEntity | null>,
+    slice: (start?: number, end?: number) => QueryBuilder<TEntity>,
+};
+
+type OmitPrimaryKeys<TEntity> = {
+    [P in keyof TEntity]: TEntity[P] // TODO
+};
+
+type Repository<TEntity> = { [P in keyof QueryBuilder<TEntity>]: QueryBuilder<TEntity>[P] } & {
+    add: (entity: OmitPrimaryKeys<TEntity>) => void,
+};
+
+export type ChangeEntry<TEntities> = {
+    entityType: keyof TEntities,
+    entity: GetEntityFields<TEntities[keyof TEntities]>,
+    originalValues: Record<symbol, unknown> | null,
+    state: 'new' | 'unchanged' | 'changed' | 'deleted',
+};
+
+type ChangeTracker<TEntities> = {
+    entries: ChangeEntry<TEntities>[],
+};
+
+type DbConnectionLifetime<TEntities> = { [Entity in keyof TEntities]: Repository<TEntities[Entity]> } & {
+    dispose: () => void,
+    saveChanges: () => Promise<void>,
+    changeTracker: ChangeTracker<TEntities>,
+};
+
+type DbHandle<TEntities> = {
+    __entitiesType?: TEntities,
+    createLifetime: () => DbConnectionLifetime<TEntities>,
+};
+
+function defineContext<TEntities>(config: DefineDatabaseConfig<TEntities>): DbHandle<TEntities> {
+    return {
+        createLifetime: () => {
+            /* Todo */
+        },
+    };
+}
+
+const db = defineContext({
+    entities: {
+        users: {
+            options: {
+                tableName: 'users',
+            },
+            columnSpec: {
+                id: dataTypes.bigint().primaryKey().autoIncrement(),
+                name: dataTypes.string().required(),
+                email: dataTypes.string().required().unique(),
+                createdAt: dataTypes.dateTime().required(),
+            }
+        },
+    },
+});
+
+const connection = db.createLifetime();
+connection.users.filter(u => u.name.startsWith('test'));
